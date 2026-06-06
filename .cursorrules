@@ -1,0 +1,131 @@
+# Compute Engine — Cursor Rules
+
+## Project Overview
+
+A math compute engine built from scratch. Every algorithm is hand-implemented in C++23 with optional CUDA acceleration and Python bindings via nanobind. Two goals: a real HPC library AND a LinkedIn content series (3–4 posts/week, one function/topic per post).
+
+## Stack
+
+- **C++23** — core language. Use `std::expected`, `std::mdspan`, `std::span`, `std::print`.
+- **CUDA** — optional GPU acceleration, toggled via `COMPUTE_ENABLE_CUDA=ON`. SM 86 target (RTX 3060).
+- **nanobind** — Python bindings. Zero-copy numpy arrays via `nb::ndarray`.
+- **CMake 4.3 + Ninja** — build system. Presets: `debug`, `relwithdebinfo`, `release`, `release-cuda`.
+- **OneTBB** — CPU parallelism (prefer over OpenMP).
+- **FFTW3** — CPU FFT (available via system install).
+- **Catch2** — unit tests. **Google Benchmark** — performance tests.
+
+## Non-Negotiable Rules
+
+1. **No math libraries in the engine.** Eigen and Boost.Math are on the system but are only used in `tests/` as oracles. Never `#include` them in `include/` or `src/`.
+
+2. **CUDA is always optional.** Every GPU function needs a CPU fallback. `COMPUTE_ENABLE_CUDA=OFF` must build cleanly with all tests passing.
+
+3. **No CUDA types in public headers.** `cudaStream_t`, `float4*`, `dim3`, etc. stay in `.cu` files and the dispatch layer. `include/compute/` is pure C++.
+
+4. **Error handling via `std::expected`.** Use `compute::core::Result<T>` in C++ code. Convert to Python exceptions only at the nanobind boundary in `bindings/python/`.
+
+5. **Implement everything from scratch.** No GSL, no Armadillo, no OpenBLAS as a dependency. The point is to build it.
+
+## Directory Structure
+
+```
+include/compute/        ← public API headers (pure C++, no CUDA types)
+  core/                 ← aligned_buffer, simd_traits, error.hpp, compute_policy
+  linalg/               ← matrix types, decompositions, iterative solvers
+  numerical/            ← root-finding, interpolation, quadrature, FFT, autodiff
+  ode/                  ← ODE integrators
+  stats/                ← statistics
+  probability/          ← distributions, sampling, MCMC
+  combinatorics/        ← combinatorial algorithms, DSA
+
+src/compute/            ← compiled .cpp units (mirrors include/)
+  cuda/                 ← .cu GPU kernels (linalg/, numerical/, stats/)
+
+bindings/python/        ← nanobind modules (_compute_<module>.cpp per module)
+tests/unit/             ← Catch2 tests (test_<module>.cpp)
+tests/bench/            ← Google Benchmark (bench_<module>.cpp)
+scripts/python/         ← Python demo scripts and notebooks
+docs/weekly/            ← LinkedIn post drafts
+cmake/                  ← CompilerOptions.cmake, CUDAConfig.cmake, PythonBindings.cmake
+```
+
+## Namespaces
+
+```cpp
+compute::core       // buffer, SIMD traits, error types, dispatch policy
+compute::linalg     // all linear algebra
+compute::num        // numerical analysis
+compute::ode        // ODE solvers
+compute::stats      // statistics
+compute::prob       // probability
+compute::comb       // combinatorics
+compute::cuda       // GPU paths (only included when CUDA is enabled)
+```
+
+## CPU/GPU Dispatch Pattern
+
+Every function with a GPU path follows this pattern:
+
+```cpp
+// In include/compute/linalg/gemm.hpp (pure C++, no CUDA types)
+namespace compute::linalg {
+    Result<void> gemm(std::span<const double> A,
+                      std::span<const double> B,
+                      std::span<double>       C,
+                      std::size_t m, std::size_t n, std::size_t k);
+}
+
+// In src/compute/linalg/gemm.cpp — checks ComputePolicy, routes to CPU or GPU
+// In src/compute/cuda/linalg/gemm_kernels.cu — GPU implementation
+```
+
+The `compute::core::ComputePolicy` thread-local (`cpu_only` / `gpu_preferred` / `automatic`) controls routing. Check `core::get_policy()` in the dispatch layer.
+
+## Code Style
+
+- **No comments explaining what code does.** Good names do that.
+- **Comments only for WHY** something non-obvious is done: numerical stability choices, alignment requirements, cache tiling rationale, workarounds for specific hardware behavior.
+- **No docstrings. No multi-line comment blocks.**
+- Tolerances in tests come from the algorithm's theoretical error bound, not arbitrary constants.
+- Prefer `std::size_t` for sizes/indices. Use `ptrdiff_t` for signed differences.
+- Column-major storage for matrices (cache-friendly for column operations in decompositions).
+
+## Build
+
+```bash
+cmake --preset relwithdebinfo          # configure
+cmake --build build/relwithdebinfo -j  # build
+cd build/relwithdebinfo && ctest       # test
+
+cmake --preset release-cuda            # CUDA build (Week 4+)
+```
+
+## Current Module Status
+
+| Module | Status |
+|--------|--------|
+| core | done — aligned_buffer, simd_traits, error.hpp, compute_policy |
+| linalg | in progress — Tier 1 fundamentals next |
+| numerical | not started |
+| ode | not started |
+| stats | not started |
+| probability | not started |
+| combinatorics | not started |
+
+## Linear Algebra Progression (current focus)
+
+**Tier 1 — Fundamentals** (current): add, subtract, scalar multiply, Hadamard, transpose, dot, matrix-vector multiply, naive GEMM, trace/norms
+
+**Tier 2 — Performance**: tiled GEMM, AVX-512 FMA kernel, cache-oblivious GEMM, Strassen
+
+**Tier 3 — Decompositions**: LU, Cholesky, Householder QR, SVD, rank-revealing QR
+
+**Tier 4 — Eigenvalues + Iterative**: power/inverse/Rayleigh iteration, Conjugate Gradient, Arnoldi
+
+**Tier 5 — GPU**: tiled SGEMM kernel, cuBLAS dispatch, batched inversion, cuSPARSE
+
+## Hardware Assumptions (dev machine)
+
+- Ryzen 7 9800X3D: AVX-512, 96 MB 3D V-Cache — tile sizes can be larger than standard advice
+- RTX 3060 12 GB: SM 8.6, 28 SMs — default launch: 256 threads/block
+- Arch Linux, GCC 16 / Clang 22, Python 3.14
