@@ -246,4 +246,4 @@ ctest -R '^(core|linalg)$' --output-on-failure
 
 ## Current focus
 
-**Linear Algebra Tier 1** — CPU fundamentals done; **CUDA GPU path** implemented; Metal/Vulkan scaffolds; **Python bindings** for all Tier 1 ops. Next: Tier 2 CPU GEMM, Vulkan runtime, Metal on macOS. See `todo.md` and `CHANGELOG.md`.
+**Linear Algebra Tier 1** — CPU fundamentals done; **CUDA GPU path** implemented; **Metal GPU path** implemented (macOS, float32 — MSL has no float64); Vulkan scaffold (Linux); **Python bindings** for all Tier 1 ops. Next: Tier 2 CPU GEMM, Vulkan runtime. See `todo.md` and `CHANGELOG.md`.

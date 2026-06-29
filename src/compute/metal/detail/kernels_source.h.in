@@ -1,0 +1,13 @@
+#pragma once
+
+// GENERATED at configure time from src/compute/metal/linalg/kernels.metal.
+// Do not edit — change kernels.metal and re-run cmake. The MSL is compiled at
+// runtime via -[MTLDevice newLibraryWithSource:options:error:].
+
+namespace compute::metal::detail {
+
+inline constexpr const char* kShaderSource = R"METAL(
+@COMPUTE_METAL_KERNEL_SRC@
+)METAL";
+
+} // namespace compute::metal::detail

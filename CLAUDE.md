@@ -24,6 +24,7 @@ A math compute engine built from scratch in C++/CUDA with Python bindings. Every
 - **C++23 everywhere.** Use `std::expected` for error handling (not exceptions in hot paths), `std::mdspan` for matrix views, `std::span` for buffer views.
 - **CUDA is optional.** Every function that has a GPU path must also have a CPU path. The `COMPUTE_ENABLE_CUDA=OFF` build must compile and pass all tests cleanly.
 - **No CUDA types in public headers.** `cudaStream_t`, `float4*`, etc. must not appear in `include/compute/`. The dispatch layer in `.cu` files is the only place CUDA types are used.
+- **Metal kernels live in `.metal` files.** Any Metal shader/kernel code (MSL) must be written in a real `.metal` source file — never embedded as a C++ string literal. When the Metal Toolchain (`xcrun metal`/`metallib`) is unavailable, embed the `.metal` file into a generated header at build time (CMake `file(READ)` + `configure_file`) and compile it at runtime via `newLibraryWithSource:`; the `.metal` file stays the single source of truth. The same applies to other GPU kernels (`.cu`, `.comp`) — keep kernel code in real, syntax-highlighted source files, not strings.
 
 ## Repository Layout
 
@@ -80,6 +81,7 @@ cmake --build build/release-cuda --parallel
 
 - [x] Week 1 — Foundation: CMake skeleton, core headers, Python binding working
 - [ ] Week 2 — Linear Algebra Tier 1 (fundamentals: add, mul, transpose, dot, norms)
+- GPU backends: CUDA (Linux/NVIDIA) and Metal (macOS, float32) implemented for all Tier 1 ops; Vulkan scaffold only.
 
 See `todo.md` for the full module roadmap.
 

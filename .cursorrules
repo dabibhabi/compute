@@ -26,6 +26,8 @@ A math compute engine built from scratch. Every algorithm is hand-implemented in
 
 5. **Implement everything from scratch.** No GSL, no Armadillo, no OpenBLAS as a dependency. The point is to build it.
 
+6. **GPU kernels live in real shader/source files.** Metal kernels (MSL) go in a `.metal` file — never embedded as a C++ string literal. Likewise CUDA kernels in `.cu` and Vulkan kernels in `.comp`. When a kernel compiler is unavailable (e.g. the Metal Toolchain), embed the `.metal` file into a generated header at build time (CMake `file(READ)` + `configure_file`) and compile at runtime via `newLibraryWithSource:` — the `.metal` file stays the single source of truth, never a hand-written string.
+
 ## Directory Structure
 
 ```

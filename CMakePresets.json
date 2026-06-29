@@ -53,13 +53,33 @@
         "COMPUTE_ENABLE_CUDA": "ON",
         "COMPUTE_ENABLE_VULKAN": "ON"
       }
+    },
+    {
+      "name": "relwithdebinfo-metal",
+      "inherits": "relwithdebinfo",
+      "displayName": "RelWithDebInfo + Metal (macOS)",
+      "cacheVariables": {
+        "COMPUTE_ENABLE_METAL": "ON",
+        "COMPUTE_ENABLE_CUDA": "OFF"
+      }
+    },
+    {
+      "name": "release-metal",
+      "inherits": "release",
+      "displayName": "Release + Metal (macOS)",
+      "cacheVariables": {
+        "COMPUTE_ENABLE_METAL": "ON",
+        "COMPUTE_ENABLE_CUDA": "OFF"
+      }
     }
   ],
   "buildPresets": [
     { "name": "debug",          "configurePreset": "debug" },
     { "name": "relwithdebinfo", "configurePreset": "relwithdebinfo" },
     { "name": "release",        "configurePreset": "release" },
-    { "name": "release-cuda",   "configurePreset": "release-cuda" }
+    { "name": "release-cuda",   "configurePreset": "release-cuda" },
+    { "name": "relwithdebinfo-metal", "configurePreset": "relwithdebinfo-metal" },
+    { "name": "release-metal",        "configurePreset": "release-metal" }
   ],
   "testPresets": [
     {
@@ -70,6 +90,11 @@
     {
       "name": "relwithdebinfo",
       "configurePreset": "relwithdebinfo",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "relwithdebinfo-metal",
+      "configurePreset": "relwithdebinfo-metal",
       "output": { "outputOnFailure": true }
     }
   ]
