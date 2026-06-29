@@ -25,6 +25,7 @@ A math compute engine built from scratch in C++23 with optional CUDA/Metal/Vulka
 5. **Implement everything from scratch.** No GSL, no Armadillo, no OpenBLAS as dependencies.
 6. **`g_policy` lives in a `.cpp` file.** `thread_local ComputePolicy g_policy` is defined in `src/compute/core/compute_policy.cpp` — never as `inline thread_local` in a header. Shared objects (nanobind `.so` files) require non-header TLS.
 7. **Higher modules depend on linalg, not the reverse.** `numerical`, `ode`, `stats`, `probability` call `compute::linalg` ops. `linalg` never includes anything from those modules.
+8. **GPU kernels live in real shader/source files.** Metal kernels (MSL) go in a `.metal` file — never embedded as a C++ string literal; likewise CUDA in `.cu`, Vulkan in `.comp`. When the kernel compiler is unavailable (e.g. the Metal Toolchain), embed the `.metal` file into a generated header at build time (CMake `file(READ)` + `configure_file`) and compile at runtime via `newLibraryWithSource:` — the `.metal` file stays the single source of truth, never a hand-written string.
 
 ---
 

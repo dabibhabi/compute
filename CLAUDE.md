@@ -27,6 +27,7 @@ A math compute engine built from scratch in C++23/CUDA with Python bindings via 
 - **C++23 everywhere.** Use `std::expected` for error handling, `std::span` for buffer views.
 - **CUDA is optional.** `COMPUTE_ENABLE_CUDA=OFF` must compile and pass all tests cleanly.
 - **No GPU types in public headers.** `cudaStream_t`, `float4*`, etc. must not appear in `include/compute/`.
+- **GPU kernels live in real shader/source files.** Metal kernels (MSL) go in a `.metal` file — never embedded as a C++ string literal; likewise CUDA in `.cu`, Vulkan in `.comp`. When the kernel compiler is unavailable (e.g. the Metal Toolchain `xcrun metal`/`metallib`), embed the `.metal` file into a generated header at build time (CMake `file(READ)` + `configure_file`) and compile it at runtime via `newLibraryWithSource:`; the `.metal` file stays the single source of truth, never a hand-written string.
 - **`g_policy` lives in a `.cpp` file.** The `thread_local ComputePolicy g_policy` definition is in `src/compute/core/compute_policy.cpp`. Never `inline thread_local` in a header — nanobind shared objects trigger TLS relocation errors.
 - **Higher modules depend on linalg, never the reverse.** `numerical`, `ode`, `stats`, `probability` call `compute::linalg` ops. `linalg` headers never include from those modules.
 
@@ -170,7 +171,7 @@ cmake --build build/release-gpu --parallel
 ## Current Progress
 
 - [x] Week 1 — Core infrastructure: `aligned_buffer`, `simd_traits`, `ComputePolicy`, `Result<T>`, Python binding `_compute_core`
-- [x] Week 2 — Linalg Tier 1: all 11 ops, column-major views, GPU dispatch layer, CUDA backend (cuBLAS + kernels), Metal/Vulkan scaffolds, Python bindings `_compute_linalg`, CI
+- [x] Week 2 — Linalg Tier 1: all 11 ops, column-major views, GPU dispatch layer, CUDA backend (cuBLAS + kernels), Metal backend (macOS, float32), Vulkan scaffold, Python bindings `_compute_linalg`, CI
 - [ ] Week 3 — Linalg Tier 2: loop reorder, tiled GEMM, AVX-512 FMA micro-kernel, TBB parallel element-wise, bench_linalg
 - [ ] Week 4 — Linalg Tier 3: LU, Cholesky, Householder QR, SVD
 - [ ] Week 5+ — Numerical module: Newton, bisection, Gauss-Legendre, dual-number autodiff; uses linalg
