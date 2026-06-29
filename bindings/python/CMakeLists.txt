@@ -7,3 +7,9 @@ compute_python_module(
   LINK    compute_core
 )
 
+compute_python_module(
+  NAME    _compute_linalg
+  SOURCES linalg_bind.cpp
+  LINK    compute_linalg
+)
+

@@ -40,9 +40,18 @@
     {
       "name": "release-cuda",
       "inherits": "release",
-      "displayName": "Release + CUDA (Week 4+)",
+      "displayName": "Release + CUDA",
       "cacheVariables": {
         "COMPUTE_ENABLE_CUDA": "ON"
+      }
+    },
+    {
+      "name": "release-gpu",
+      "inherits": "release",
+      "displayName": "Release + CUDA + Vulkan",
+      "cacheVariables": {
+        "COMPUTE_ENABLE_CUDA": "ON",
+        "COMPUTE_ENABLE_VULKAN": "ON"
       }
     }
   ],

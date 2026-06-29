@@ -15,30 +15,30 @@ Scaffold files created under `include/compute/linalg/`, `src/compute/linalg/`, e
 Implement in this order — each op follows the same pipeline: header → `.cpp` → test → binding.
 
 #### Setup (do once before any op)
-- [ ] `layout.hpp` — column-major index `(i,j) → j*m+i`, dimension validation, `Result<void>` helpers
-- [ ] `linalg.hpp` — umbrella `#include` of all op headers
-- [ ] `src/compute/linalg/CMakeLists.txt` — `compute_linalg` STATIC lib listing all `.cpp` files
-- [ ] `src/compute/CMakeLists.txt` — replace linalg INTERFACE placeholder with `add_subdirectory(linalg)`
-- [ ] `tests/unit/CMakeLists.txt` — `test_linalg` + `find_package(Eigen3)` (oracle, tests only)
-- [ ] `tests/bench/CMakeLists.txt` — `bench_linalg`
+- [x] `layout.hpp` — column-major index `(i,j) → j*m+i`, dimension validation, `Result<void>` helpers
+- [x] `linalg.hpp` — umbrella `#include` of all op headers
+- [x] `src/compute/linalg/CMakeLists.txt` — `compute_linalg` STATIC lib listing all `.cpp` files
+- [x] `src/compute/CMakeLists.txt` — replace linalg INTERFACE placeholder with `add_subdirectory(linalg)`
+- [x] `tests/unit/CMakeLists.txt` — `test_linalg` + Eigen3 (FetchContent fallback)
+- [ ] `tests/bench/CMakeLists.txt` — `bench_linalg` (GEMM baseline GFLOPS)
 - [ ] `bindings/python/CMakeLists.txt` — `_compute_linalg` module
-- [ ] Verify build: `cmake --preset relwithdebinfo && cmake --build build/relwithdebinfo && ctest`
+- [x] Verify build: `cmake --preset release-cuda && ctest -R linalg`
 
 #### Operations (one LinkedIn post each)
-- [ ] 1. Matrix addition / subtraction        (`add.hpp`, `sub.hpp` — `A + B`, `A - B`)
-- [ ] 2. Scalar multiplication                (`scale.hpp` — `alpha * A`)
-- [ ] 3. Element-wise multiply (Hadamard)     (`hadamard.hpp` — `A ⊙ B`)
-- [ ] 4. Matrix transpose                     (`transpose.hpp` — out-of-place `A^T`)
-- [ ] 5. Dot product                          (`dot.hpp` — `u · v`)
-- [ ] 6. Matrix-vector multiply               (`gemv.hpp` — `Ax`)
-- [ ] 7. Matrix-matrix multiply (naive)       (`gemm.hpp` — `AB`, intentional `i-j-k` loop)
-- [ ] 8. Trace, Frobenius norm, infinity norm (`trace.hpp`, `norm_fro.hpp`, `norm_inf.hpp`)
+- [x] 1. Matrix addition / subtraction        (`add.hpp`, `sub.hpp` — `A + B`, `A - B`)
+- [x] 2. Scalar multiplication                (`scale.hpp` — `alpha * A`)
+- [x] 3. Element-wise multiply (Hadamard)     (`hadamard.hpp` — `A ⊙ B`)
+- [x] 4. Matrix transpose                     (`transpose.hpp` — out-of-place `A^T`)
+- [x] 5. Dot product                          (`dot.hpp` — `u · v`)
+- [x] 6. Matrix-vector multiply               (`gemv.hpp` — `Ax`)
+- [x] 7. Matrix-matrix multiply (naive)       (`gemm.hpp` — `AB`, intentional `i-j-k` loop)
+- [x] 8. Trace, Frobenius norm, infinity norm (`trace.hpp`, `norm_fro.hpp`, `norm_inf.hpp`)
 
 #### Per-op checklist (repeat for each)
-- [ ] Public header in `include/compute/linalg/` — pure C++, `std::span`, `core::Result<T>`, no CUDA types
-- [ ] Implementation in `src/compute/linalg/` — validate dims, scalar loop, column-major
-- [ ] `TEST_CASE` in `tests/unit/test_linalg.cpp` — hand-computed tiny case + Eigen oracle + mismatch error
-- [ ] Binding in `bindings/python/linalg_bind.cpp` — numpy in/out, `Result` → exception at boundary
+- [x] Public header in `include/compute/linalg/` — pure C++, views, `core::Result<T>`, no CUDA types
+- [x] Implementation in `src/compute/linalg/` — validate dims, scalar loop, column-major
+- [x] `TEST_CASE` in `tests/unit/test_linalg.cpp` — hand-computed tiny case + Eigen oracle + mismatch error
+- [x] Binding in `bindings/python/linalg_bind.cpp` — numpy in/out, `Result` → exception at boundary
 - [ ] (GEMM/GEMV) benchmark in `tests/bench/bench_linalg.cpp` — record baseline GFLOPS for Tier 2
 
 ### Tier 2 — Performance

@@ -5,3 +5,8 @@
 #include "core/error.hpp"
 #include "core/simd_traits.hpp"
 #include "core/version.hpp"
+
+namespace compute {
+
+
+}

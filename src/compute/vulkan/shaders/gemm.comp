@@ -1,0 +1,26 @@
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float64 : enable
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) readonly buffer ABuf { float64_t a[]; };
+layout(set = 0, binding = 1) readonly buffer BBuf { float64_t b[]; };
+layout(set = 0, binding = 2) writeonly buffer CBuf { float64_t c[]; };
+
+layout(push_constant) uniform PC {
+    uint m;
+    uint n;
+    uint k;
+} pc;
+
+void main() {
+    uint i = gl_GlobalInvocationID.y;
+    uint j = gl_GlobalInvocationID.x;
+    if (i >= pc.m || j >= pc.n) return;
+
+    double sum = 0.0;
+    for (uint p = 0u; p < pc.k; ++p)
+        sum += a[i + p * pc.m] * b[p + j * pc.k];
+
+    c[i + j * pc.m] = sum;
+}

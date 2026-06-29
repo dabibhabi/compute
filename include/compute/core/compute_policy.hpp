@@ -12,7 +12,7 @@ enum class ComputePolicy {
 };
 
 // Thread-local policy — change per-thread without locks.
-inline thread_local ComputePolicy g_policy = ComputePolicy::automatic;
+extern thread_local ComputePolicy g_policy;
 
 inline void set_policy(ComputePolicy p) noexcept { g_policy = p; }
 inline ComputePolicy get_policy()        noexcept { return g_policy; }

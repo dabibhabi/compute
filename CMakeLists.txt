@@ -3,6 +3,8 @@ project(compute VERSION 0.1.0 LANGUAGES CXX)
 
 # ── Options ──────────────────────────────────────────────────────────────────
 option(COMPUTE_ENABLE_CUDA    "Build CUDA kernels"         OFF)
+option(COMPUTE_ENABLE_METAL    "Build Metal kernels (macOS)" OFF)
+option(COMPUTE_ENABLE_VULKAN  "Build Vulkan compute kernels" OFF)
 option(COMPUTE_ENABLE_PYTHON  "Build Python bindings"      ON)
 option(COMPUTE_ENABLE_TESTS   "Build unit tests"           ON)
 option(COMPUTE_ENABLE_BENCH   "Build benchmarks"           ON)
@@ -55,16 +57,23 @@ endif()
 find_package(TBB REQUIRED)
 find_package(FFTW3 QUIET)  # optional; used in numerical and stats modules
 
+if(COMPUTE_ENABLE_VULKAN)
+  find_package(Vulkan REQUIRED)
+endif()
+
 # ── Core library ─────────────────────────────────────────────────────────────
-add_library(compute_core INTERFACE)
-target_include_directories(compute_core INTERFACE
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+add_library(compute_core STATIC
+  src/compute/core/compute_policy.cpp
+)
+target_include_directories(compute_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_compile_options(compute_core INTERFACE
+target_compile_options(compute_core PUBLIC
   $<$<CXX_COMPILER_ID:GNU,Clang>:$<$<CONFIG:Release,RelWithDebInfo>:-O3>>
 )
-target_link_libraries(compute_core INTERFACE TBB::tbb)
+target_link_libraries(compute_core PUBLIC TBB::tbb)
+set_target_properties(compute_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # ── Module libraries ──────────────────────────────────────────────────────────
 add_subdirectory(src/compute)
