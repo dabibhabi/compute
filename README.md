@@ -30,6 +30,14 @@ NumPy arrays must be **column-major** (`order="F"`). See [CONTRIBUTING.md](CONTR
 | [docs/diagrams/gpu-dispatch.excalidraw](docs/diagrams/gpu-dispatch.excalidraw) | Architecture: Python → nanobind → linalg → CPU/GPU backends |
 | [todo.md](todo.md) | Module roadmap |
 
+## Journal
+
+Dated session notes covering design decisions, module composition, and optimisation discussions. Rendered with LaTeX, mermaid diagrams, and file references.
+
+| Entry | Topics |
+|-------|--------|
+| [2026-06-29](docs/journal/2026-06-29.md) | Module dependency DAG, how higher modules compose linalg; CPU optimisation ladder (loop interchange → AVX-512 FMA → cache blocking → TBB → Strassen) |
+
 ## Python API
 
 ```python

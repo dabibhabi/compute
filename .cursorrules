@@ -2,130 +2,266 @@
 
 ## Project Overview
 
-A math compute engine built from scratch. Every algorithm is hand-implemented in C++23 with optional CUDA acceleration and Python bindings via nanobind. Two goals: a real HPC library AND a LinkedIn content series (3–4 posts/week, one function/topic per post).
+A math compute engine built from scratch in C++23 with optional CUDA/Metal/Vulkan acceleration and Python bindings via nanobind. Every algorithm is hand-implemented. Two simultaneous goals: a real HPC library AND a LinkedIn content series (one function per post).
 
 ## Stack
 
-- **C++23** — core language. Use `std::expected`, `std::mdspan`, `std::span`, `std::print`.
-- **CUDA** — optional GPU acceleration, toggled via `COMPUTE_ENABLE_CUDA=ON`. SM 86 target (RTX 3060).
-- **nanobind** — Python bindings. Zero-copy numpy arrays via `nb::ndarray`.
-- **CMake 4.3 + Ninja** — build system. Presets: `debug`, `relwithdebinfo`, `release`, `release-cuda`.
-- **OneTBB** — CPU parallelism (prefer over OpenMP).
-- **FFTW3** — CPU FFT (available via system install).
+- **C++23** — `std::expected`, `std::span`, `std::mdspan`, `std::print`. No exceptions in hot paths.
+- **CUDA** — optional GPU acceleration via `COMPUTE_ENABLE_CUDA=ON`. SM 86 target (RTX 3060).
+- **nanobind** — Python bindings. Zero-copy numpy arrays via `nb::ndarray`. Arrays must be Fortran-order (`order='F'`).
+- **CMake 4.3 + Ninja** — presets: `debug`, `relwithdebinfo`, `release`, `release-cuda`, `release-gpu`.
+- **OneTBB** — CPU parallelism. Prefer over raw threads or OpenMP.
+- **FFTW3** — CPU FFT (system install, optional link).
 - **Catch2** — unit tests. **Google Benchmark** — performance tests.
+
+---
 
 ## Non-Negotiable Rules
 
-1. **No math libraries in the engine.** Eigen and Boost.Math are on the system but are only used in `tests/` as oracles. Never `#include` them in `include/` or `src/`.
+1. **No math libraries in the engine.** Eigen and Boost.Math exist only in `tests/` as oracles. Never `#include` them in `include/` or `src/`.
+2. **CUDA is always optional.** `COMPUTE_ENABLE_CUDA=OFF` must build cleanly and pass all tests.
+3. **No CUDA/Metal/Vulkan types in public headers.** `cudaStream_t`, `float4*`, `dim3` stay in `.cu` files and dispatch. `include/compute/` is pure C++.
+4. **Error handling via `std::expected`.** Use `compute::core::Result<T>` everywhere in C++. Convert to `std::runtime_error` only at the nanobind boundary.
+5. **Implement everything from scratch.** No GSL, no Armadillo, no OpenBLAS as dependencies.
+6. **`g_policy` lives in a `.cpp` file.** `thread_local ComputePolicy g_policy` is defined in `src/compute/core/compute_policy.cpp` — never as `inline thread_local` in a header. Shared objects (nanobind `.so` files) require non-header TLS.
+7. **Higher modules depend on linalg, not the reverse.** `numerical`, `ode`, `stats`, `probability` call `compute::linalg` ops. `linalg` never includes anything from those modules.
 
-2. **CUDA is always optional.** Every GPU function needs a CPU fallback. `COMPUTE_ENABLE_CUDA=OFF` must build cleanly with all tests passing.
+---
 
-3. **No CUDA types in public headers.** `cudaStream_t`, `float4*`, `dim3`, etc. stay in `.cu` files and the dispatch layer. `include/compute/` is pure C++.
+## Adding a New Linalg Operation — Required Checklist
 
-4. **Error handling via `std::expected`.** Use `compute::core::Result<T>` in C++ code. Convert to Python exceptions only at the nanobind boundary in `bindings/python/`.
+Follow this exact sequence. Every op follows the same pipeline:
 
-5. **Implement everything from scratch.** No GSL, no Armadillo, no OpenBLAS as a dependency. The point is to build it.
+### 1. Public header — `include/compute/linalg/<op>.hpp`
+
+```cpp
+#pragma once
+#include <compute/linalg/layout.hpp>
+#include <compute/core/error.hpp>
+
+namespace compute::linalg {
+[[nodiscard]] core::Result<void> <op>(<args using views/spans>) noexcept;
+}
+```
+
+- Use `const_matrix_view` / `matrix_view` / `std::span<double>` — never raw pointers or sizes as separate args.
+- Return `core::Result<void>` (or `Result<double>` for scalar ops).
+- `[[nodiscard]]` always.
+
+### 2. Implementation — `src/compute/linalg/<op>.cpp`
+
+```cpp
+#include <compute/linalg/<op>.hpp>
+#include <compute/linalg/detail/gpu_dispatch.hpp>
+#include <compute/linalg/detail/route.hpp>
+
+namespace compute::linalg {
+namespace {
+core::Result<void> <op>_cpu(<args>) noexcept {
+    // validate dims first, return make_error on failure
+    // scalar loop, column-major order (j outer, i inner)
+}
+}
+core::Result<void> <op>(<args>) noexcept {
+    return detail::run_with_gpu(
+        [&] { return <op>_cpu(<args>); },
+        [&] { return detail::gpu::<op>(<args>); },
+        [&] { return std::pair{<size>, std::size_t{0}}; });
+}
+}
+```
+
+- Validate dimensions first, before any computation.
+- CPU loop: `j` outer, `i` inner — matches column-major storage.
+- Use `run_with_gpu()` for matrix ops; `run_scalar_with_gpu()` for ops returning `double`.
+- Scalar ops (dot, trace, norms): return `Result<double>`, not `Result<void>`.
+
+### 3. Register in `src/compute/linalg/CMakeLists.txt`
+
+Add `<op>.cpp` to the `add_library(compute_linalg STATIC ...)` source list.
+
+### 4. Add GPU stub to `include/compute/linalg/detail/gpu_dispatch.hpp`
+
+```cpp
+[[nodiscard]] core::Result<void> <op>(<same args as public header>) noexcept;
+```
+
+### 5. Add GPU stub to `src/compute/linalg/dispatch/gpu_dispatch.cpp`
+
+Add a `struct <Op>Ops` with `cuda`, `metal`, `vulkan` fields, and wire it into `run_void()` / `run_scalar()` following the existing pattern for any op.
+
+### 6. Add to umbrella header — `include/compute/linalg.hpp`
+
+```cpp
+#include "compute/linalg/<op>.hpp"
+```
+
+### 7. Unit test — `tests/unit/test_linalg.cpp`
+
+Three test cases minimum:
+1. Hand-computed small case (2×2 or 3×3) — verify exact values.
+2. Eigen oracle — construct same inputs, compare results to `Eigen::MatrixXd` operation with tight tolerance derived from algorithm error bound.
+3. Dimension mismatch — verify `Result` is an error with `ErrorCode::dimension_mismatch`.
+
+### 8. Python binding — `bindings/python/linalg_bind.cpp`
+
+```cpp
+m.def("<op>", [](nb::ndarray<const double, nb::ndim<2>> A, ...) {
+    // require_fortran_matrix / require_vector for each input
+    // wrap in as_const_matrix / as_matrix / as_span
+    auto r = linalg::<op>(...);
+    if (!r) throw_on_error(r.error());
+});
+```
+
+All `Result` errors convert to `std::runtime_error` here — nowhere else.
+
+### 9. Re-export in `scripts/python/compute/__init__.py`
+
+```python
+from _compute_linalg import <op>
+```
+
+Add to `__all__`.
+
+---
+
+## Adding a New Module (numerical, ode, stats, etc.)
+
+When a module moves from placeholder to real:
+
+### C++ side
+
+1. **Header tree**: `include/compute/<module>/<algo>.hpp` — use same `Result<T>` + view/span pattern as linalg.
+2. **Umbrella**: `include/compute/<module>.hpp` — `#include` all op headers.
+3. **CMake**: Replace the INTERFACE placeholder in `src/compute/CMakeLists.txt` with a real STATIC library:
+   ```cmake
+   add_library(compute_<module> STATIC ...)
+   target_link_libraries(compute_<module> PUBLIC compute_linalg)
+   ```
+   `PUBLIC compute_linalg` — consumers of this module get linalg headers transitively.
+4. **Implementation**: `src/compute/<module>/<algo>.cpp` — call `compute::linalg::gemm`, `gemv`, `dot` etc. Do not reimplement matrix loops.
+
+### Python side
+
+1. Add `bindings/python/<module>_bind.cpp`.
+2. Register with `compute_python_module(NAME _compute_<module> SOURCES <module>_bind.cpp LINK compute_<module>)` in `bindings/python/CMakeLists.txt`.
+3. Create `scripts/python/compute/<module>/` subpackage re-exporting the extension.
+
+---
+
+## GPU Dispatch Pattern
+
+```
+<op>.cpp
+  └── detail::run_with_gpu(cpu_fn, gpu_fn, size_fn)
+        └── detail::gpu::<op>()            [gpu_dispatch.hpp / gpu_dispatch.cpp]
+              ├── backends::cuda::<op>()   [src/compute/cuda/linalg/linalg_dispatch.cpp]
+              ├── backends::metal::<op>()  [src/compute/metal/stub.cpp]
+              └── backends::vulkan::<op>() [src/compute/vulkan/stub.cpp]
+```
+
+Thresholds (in `gpu_dispatch.hpp`):
+- Element-wise: `element_threshold = 65536` (256×256)
+- GEMM: `gemm_n_threshold = 400`
+- Vectors: `vector_threshold = 4096`
+
+CUDA host dispatch uses C++23 `.cpp` files. `.cu` files contain only `__global__` kernels and `extern "C"` launchers — nvcc does not support C++23 or `std::expected`.
+
+---
 
 ## Directory Structure
 
 ```
-include/compute/        ← public API headers (pure C++, no CUDA types)
-  core/                 ← aligned_buffer, simd_traits, error.hpp, compute_policy
-  linalg/               ← matrix types, decompositions, iterative solvers
-  numerical/            ← root-finding, interpolation, quadrature, FFT, autodiff
-  ode/                  ← ODE integrators
-  stats/                ← statistics
-  probability/          ← distributions, sampling, MCMC
-  combinatorics/        ← combinatorial algorithms, DSA
+include/compute/             Public API (pure C++, no GPU types)
+  core/                      aligned_buffer, simd_traits, error.hpp, compute_policy
+  linalg/                    layout + op headers
+  linalg/detail/             gpu_dispatch.hpp, route.hpp, elementwise.hpp (internal)
+  backends/                  gpu_backend.hpp (backend interface declarations)
+  numerical/ ode/ stats/     (planned; placeholder headers now)
+  probability/ combinatorics/
 
-src/compute/            ← compiled .cpp units (mirrors include/)
-  cuda/                 ← .cu GPU kernels (linalg/, numerical/, stats/)
+src/compute/                 Compiled units
+  core/                      compute_policy.cpp (thread_local definition)
+  linalg/                    CPU op .cpp files
+  linalg/dispatch/           gpu_dispatch.cpp (multi-backend selector)
+  cuda/detail/               CUDA context, stream, cuBLAS handle
+  cuda/linalg/               CUDA kernels (.cu) + host dispatch (.cpp)
+  metal/                     Metal stub (Linux no-op)
+  vulkan/                    Vulkan stub + GLSL shaders
 
-bindings/python/        ← nanobind modules (_compute_<module>.cpp per module)
-tests/unit/             ← Catch2 tests (test_<module>.cpp)
-tests/bench/            ← Google Benchmark (bench_<module>.cpp)
-scripts/python/         ← Python demo scripts and notebooks
-docs/weekly/            ← LinkedIn post drafts
-cmake/                  ← CompilerOptions.cmake, CUDAConfig.cmake, PythonBindings.cmake
+bindings/python/             nanobind extension modules
+tests/unit/                  Catch2 — one file per module
+tests/bench/                 Google Benchmark — one file per module
+scripts/python/compute/      Python package
+docs/                        diagrams/, journal/, weekly/
+cmake/                       CompilerOptions, CUDAConfig, PythonBindings
 ```
+
+---
 
 ## Namespaces
 
 ```cpp
-compute::core       // buffer, SIMD traits, error types, dispatch policy
-compute::linalg     // all linear algebra
-compute::num        // numerical analysis
-compute::ode        // ODE solvers
-compute::stats      // statistics
-compute::prob       // probability
-compute::comb       // combinatorics
-compute::cuda       // GPU paths (only included when CUDA is enabled)
+compute::core          // aligned_buffer, simd_traits, Result<T>, ComputePolicy
+compute::linalg        // matrix ops, decompositions, iterative solvers
+compute::num           // root-finding, interpolation, FFT, quadrature, autodiff
+compute::ode           // RK4, DOPRI5, SDIRK2, Verlet
+compute::stats         // descriptive stats, regression, hypothesis tests, KDE
+compute::prob          // PRNG, special functions, distributions, MCMC
+compute::comb          // combinatorial functions, DP algorithms, graph kernels
+compute::backends      // GPU dispatch interface (cuda, metal, vulkan sub-namespaces)
 ```
 
-## CPU/GPU Dispatch Pattern
-
-Every function with a GPU path follows this pattern:
-
-```cpp
-// In include/compute/linalg/gemm.hpp (pure C++, no CUDA types)
-namespace compute::linalg {
-    Result<void> gemm(std::span<const double> A,
-                      std::span<const double> B,
-                      std::span<double>       C,
-                      std::size_t m, std::size_t n, std::size_t k);
-}
-
-// In src/compute/linalg/gemm.cpp — checks ComputePolicy, routes to CPU or GPU
-// In src/compute/cuda/linalg/gemm_kernels.cu — GPU implementation
-```
-
-The `compute::core::ComputePolicy` thread-local (`cpu_only` / `gpu_preferred` / `automatic`) controls routing. Check `core::get_policy()` in the dispatch layer.
+---
 
 ## Code Style
 
-- **No comments explaining what code does.** Good names do that.
-- **Comments only for WHY** something non-obvious is done: numerical stability choices, alignment requirements, cache tiling rationale, workarounds for specific hardware behavior.
-- **No docstrings. No multi-line comment blocks.**
-- Tolerances in tests come from the algorithm's theoretical error bound, not arbitrary constants.
-- Prefer `std::size_t` for sizes/indices. Use `ptrdiff_t` for signed differences.
-- Column-major storage for matrices (cache-friendly for column operations in decompositions).
+- No comments explaining **what** code does — identifiers do that.
+- Comments only for **why** something non-obvious is done: numerical stability choices, alignment requirements, cache tiling rationale, hardware-specific workarounds.
+- No docstrings. No multi-line comment blocks.
+- `std::size_t` for sizes/indices. `ptrdiff_t` for signed differences.
+- Column-major storage: element `(i,j)` of an `m×n` matrix is at index `j*m + i`.
+- Test tolerances derived from the algorithm's theoretical error bound — not arbitrary constants.
+- `[[nodiscard]]` on every function returning `Result<T>` or a view.
+
+---
+
+## Module Status
+
+| Module | Status | Notes |
+|--------|--------|-------|
+| `core` | Done | `aligned_buffer`, `simd_traits`, `error.hpp`, `compute_policy` |
+| `linalg` Tier 1 | Done | add, sub, scale, hadamard, transpose, dot, gemv, gemm, trace, norm_fro, norm_inf |
+| `linalg` Tier 2 | Not started | Loop reorder, tiled GEMM, AVX-512 FMA, cache-oblivious, Strassen |
+| `linalg` Tier 3 | Not started | LU, Cholesky, Householder QR, SVD |
+| `linalg` Tier 4 | Not started | Eigenvalues, CG, Arnoldi |
+| `linalg` Tier 5 | Partial | cuBLAS DGEMM done; tiled SGEMM kernel, cuSPARSE pending |
+| `numerical` | Placeholder | INTERFACE CMake target only |
+| `ode` | Placeholder | INTERFACE CMake target only |
+| `stats` | Placeholder | INTERFACE CMake target only |
+| `probability` | Placeholder | INTERFACE CMake target only |
+| `combinatorics` | Placeholder | INTERFACE CMake target only |
+
+---
 
 ## Build
 
 ```bash
-cmake --preset relwithdebinfo          # configure
-cmake --build build/relwithdebinfo -j  # build
-cd build/relwithdebinfo && ctest       # test
+cmake --preset relwithdebinfo                         # CPU-only dev build
+cmake --build build/relwithdebinfo --parallel
+ctest --test-dir build/relwithdebinfo --output-on-failure
 
-cmake --preset release-cuda            # CUDA build (Week 4+)
+cmake --preset release-cuda                           # CUDA + Python
+cmake --build build/release-cuda --parallel
+export PYTHONPATH="build/release-cuda/bindings/python:scripts/python"
+python scripts/python/demo_linalg.py
 ```
 
-## Current Module Status
+---
 
-| Module | Status |
-|--------|--------|
-| core | done — aligned_buffer, simd_traits, error.hpp, compute_policy |
-| linalg | in progress — Tier 1 fundamentals next |
-| numerical | not started |
-| ode | not started |
-| stats | not started |
-| probability | not started |
-| combinatorics | not started |
+## Hardware
 
-## Linear Algebra Progression (current focus)
-
-**Tier 1 — Fundamentals** (current): add, subtract, scalar multiply, Hadamard, transpose, dot, matrix-vector multiply, naive GEMM, trace/norms
-
-**Tier 2 — Performance**: tiled GEMM, AVX-512 FMA kernel, cache-oblivious GEMM, Strassen
-
-**Tier 3 — Decompositions**: LU, Cholesky, Householder QR, SVD, rank-revealing QR
-
-**Tier 4 — Eigenvalues + Iterative**: power/inverse/Rayleigh iteration, Conjugate Gradient, Arnoldi
-
-**Tier 5 — GPU**: tiled SGEMM kernel, cuBLAS dispatch, batched inversion, cuSPARSE
-
-## Hardware Assumptions (dev machine)
-
-- Ryzen 7 9800X3D: AVX-512, 96 MB 3D V-Cache — tile sizes can be larger than standard advice
-- RTX 3060 12 GB: SM 8.6, 28 SMs — default launch: 256 threads/block
-- Arch Linux, GCC 16 / Clang 22, Python 3.14
+- **CPU**: Ryzen 7 9800X3D — AVX-512, 96 MB 3D V-Cache. Use `simd_traits<double>::width = 8`. Tile sizes larger than textbook due to huge L3.
+- **GPU**: RTX 3060 12 GB, Ampere SM 8.6. 28 SMs. Default launch: 256 threads/block.
+- **OS**: Arch Linux, GCC 16 / Clang 22, Python 3.12+.
